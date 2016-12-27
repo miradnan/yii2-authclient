@@ -1,0 +1,119 @@
+<?php
+
+namespace yii\authclient\clients;
+
+use Yii;
+use yii\authclient\OAuth2;
+use yii\base\ErrorException;
+
+/**
+ * Slack allows authentication via Slack OAuth.
+ *
+ * In order to use Slack OAuth you must register your application at <https://api.slack.com/apps/YOUR_APP/oauth>.
+ *
+ * Example application configuration:
+ *
+ * ```php
+ * 'components' => [
+ *     'authClientCollection' => [
+ *         'class' => 'yii\authclient\Collection',
+ *         'clients' => [
+ *             'slack' => [
+ *                 'class' => 'yii\authclient\clients\Slack',
+ *                 'clientId' => 'slack_client_id',
+ *                 'clientSecret' => 'slack_client_secret',
+ *                 'scope' => 'identity.basic,identity.email,identity.team,identity.avatar',
+ *             ],
+ *         ],
+ *     ]
+ *     ...
+ * ]
+ * ```
+ *
+ * @see http://developer.slack.com/v3/oauth/
+ * @see https://slack.com/settings/applications/new
+ *
+ * @author Mir Adnan <contact@miradnan.com>
+ * @since 2.0
+ */
+class Slack extends OAuth2 {
+
+    /**
+     * @inheritdoc
+     */
+    public $authUrl = 'https://slack.com/oauth/authorize';
+
+    /**
+     * @inheritdo
+     */
+    public $tokenUrl = 'https://slack.com/api/oauth.access';
+
+    /**
+     * @inheritdoc
+     */
+    public $apiBaseUrl = 'https://slack.com';
+
+    /**
+     * @inheritdoc
+     */
+    public function init() {
+        parent::init();
+        if ($this->scope === null) {
+            $this->scope = 'identity.basic';
+        }
+
+        // https://api.slack.com/docs/sign-in-with-slack
+        $scopes = explode(',', $this->scope);
+        if (!in_array('identity.basic', $scopes)) {
+            throw new ErrorException("If you're just logging users in, set this to identity.basic. You can't ask for identity.email, identity.team, or identity.avatar without also asking for identity.basic.");
+        }
+    }
+
+    /**
+     * @inheritdoc
+     */
+    protected function initUserAttributes() {
+        $this->removeState('state');
+        $token = $this->fetchAccessToken(Yii::$app->request->get('code'));
+
+        $params = $token->getParams();
+
+        $first_name = $last_name = '';
+
+        if (!empty($params['user']['name']) && strpos($params['user']['name'], ' ') !== false) {
+            $name = explode(' ', $params['user']['name']);
+            if ($name) {
+                $first_name = trim($name[0]);
+                $last_name = trim($name[1]);
+            }
+        }
+
+        if (!$params['ok']) {
+            print_r($token);
+            throw new ErrorException("Invalid Slack API Response", E_ERROR);
+        }
+
+        return [
+            'id' => $params['user']['id'],
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'email' => empty($params['user']['email']) ? : $params['user']['email'],
+            'image' => empty($params['user']['email']) ? : $params['user']['image_48'],
+        ];
+    }
+
+    /**
+     * @inheritdoc
+     */
+    protected function defaultName() {
+        return 'slack';
+    }
+
+    /**
+     * @inheritdoc
+     */
+    protected function defaultTitle() {
+        return 'Slack';
+    }
+
+}
